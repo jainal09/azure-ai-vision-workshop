@@ -1,22 +1,15 @@
 """
 Generate Azure AI Vision Workshop PowerPoint from template.
-
-This script takes the Microsoft Student Ambassadors branded template
-and populates it with the workshop content with proper formatting.
 """
 
 from __future__ import annotations
 
 import shutil
-from pathlib import Path
 
 from pptx import Presentation
-from pptx.util import Inches, Pt
-from pptx.enum.text import PP_ALIGN, MSO_ANCHOR
-from pptx.dml.color import RGBColor
+from pptx.util import Pt
 
 
-# Template and output paths
 TEMPLATE_PATH = "/Users/jainal09/Downloads/MS_SA_Template_Final.pptx"
 OUTPUT_PATH = "/Users/jainal09/msa-q4-25/Azure_AI_Vision_Workshop.pptx"
 
@@ -34,25 +27,20 @@ def clear_slides(prs: Presentation, keep_first_n: int = 0) -> None:
 def get_layout_index(layout_type: str) -> int:
     """Map layout type to template layout index."""
     layout_map = {
-        "title": 3,  # Walkin 4 - title slide
-        "content": 6,  # Title & Non-bulleted text
-        "content_alt": 7,  # 2_Title & Non-bulleted text
-        "content_alt2": 8,  # 3_Title & Non-bulleted text
-        "bullets": 9,  # Title and Content (with bullets)
-        "two_column": 11,  # Two Column Non-bulleted text
-        "demo": 19,  # Demo slide
-        "video": 20,  # Video slide
-        "section": 21,  # Section Title
-        "code": 27,  # Developer Code Layout
-        "closing": 28,  # Closing logo slide_1
+        "title": 3,
+        "content": 6,
+        "content_alt": 7,
+        "content_alt2": 8,
+        "demo": 19,
+        "section": 21,
+        "closing": 28,
     }
     return layout_map.get(layout_type, 6)
 
 
-def format_text_frame(text_frame, content: str, is_bullet_list: bool = False) -> None:
-    """Format text frame with proper styling."""
+def format_text_frame(text_frame, content: str) -> None:
+    """Format text frame with proper styling - MAX 6 lines."""
     text_frame.clear()
-
     lines = content.strip().split("\n")
 
     for i, line in enumerate(lines):
@@ -61,58 +49,30 @@ def format_text_frame(text_frame, content: str, is_bullet_list: bool = False) ->
         else:
             p = text_frame.add_paragraph()
 
-        # Detect line type and format accordingly
         stripped = line.strip()
 
         if not stripped:
-            # Empty line - add spacing
             p.text = ""
-            p.space_after = Pt(12)
+            p.space_after = Pt(8)
             continue
 
-        # Check if it's a header line (no bullet, followed by content)
-        is_header = (
-            stripped and
-            not stripped.startswith("-") and
-            not stripped.startswith("•") and
-            not stripped.startswith("·") and
-            len(stripped) < 50 and
-            ":" not in stripped and
-            i + 1 < len(lines) and
-            (lines[i + 1].strip().startswith("-") or lines[i + 1].strip().startswith("•") or not lines[i + 1].strip())
-        )
-
-        # Check if it's a section header (ends with :)
-        is_section_header = stripped.endswith(":") and len(stripped) < 60
-
-        # Check if it's a bullet point
-        is_bullet = stripped.startswith("-") or stripped.startswith("•") or stripped.startswith("·")
+        is_section_header = stripped.endswith(":") and len(stripped) < 50
+        is_bullet = stripped.startswith("-") or stripped.startswith("•")
 
         if is_bullet:
-            # Bullet point
             p.text = "• " + stripped.lstrip("-•· ")
-            p.level = 0
-            p.font.size = Pt(18)
-            p.space_before = Pt(6)
-            p.space_after = Pt(6)
-        elif is_section_header:
-            # Section header (bold, slightly larger)
-            p.text = stripped
-            p.font.bold = True
             p.font.size = Pt(20)
-            p.space_before = Pt(18)
-            p.space_after = Pt(6)
-        elif is_header:
-            # Content header
+            p.space_before = Pt(4)
+            p.space_after = Pt(4)
+        elif is_section_header:
             p.text = stripped
             p.font.bold = True
             p.font.size = Pt(22)
-            p.space_before = Pt(14)
+            p.space_before = Pt(12)
             p.space_after = Pt(4)
         else:
-            # Regular text
             p.text = stripped
-            p.font.size = Pt(18)
+            p.font.size = Pt(20)
             p.space_before = Pt(4)
             p.space_after = Pt(4)
 
@@ -123,56 +83,43 @@ def add_slide(prs: Presentation, slide_data: dict) -> None:
     layout = prs.slide_layouts[layout_idx]
     slide = prs.slides.add_slide(layout)
 
-    # Set title
     if slide.shapes.title:
         slide.shapes.title.text = slide_data.get("title", "")
-        # Make title bold
-        for paragraph in slide.shapes.title.text_frame.paragraphs:
-            paragraph.font.bold = True
 
-    # Set content based on layout type
-    if slide_data["layout"] in ["content", "content_alt", "content_alt2", "bullets", "code"]:
+    if slide_data["layout"] in ["content", "content_alt", "content_alt2"]:
         for shape in slide.placeholders:
-            if shape.placeholder_format.type == 2:  # BODY type
-                content = slide_data.get("content", "")
-                format_text_frame(shape.text_frame, content)
+            if shape.placeholder_format.type == 2:
+                format_text_frame(shape.text_frame, slide_data.get("content", ""))
                 break
 
     elif slide_data["layout"] == "demo":
         for shape in slide.placeholders:
-            if shape.placeholder_format.type == 2:  # BODY type
+            if shape.placeholder_format.type == 2:
                 shape.text = slide_data.get("subtitle", "")
                 for p in shape.text_frame.paragraphs:
-                    p.font.size = Pt(24)
+                    p.font.size = Pt(28)
                 break
 
     elif slide_data["layout"] == "title":
         for shape in slide.placeholders:
-            if shape.placeholder_format.type == 2:  # BODY type
+            if shape.placeholder_format.type == 2:
                 shape.text = slide_data.get("subtitle", "")
                 for p in shape.text_frame.paragraphs:
-                    p.font.size = Pt(24)
+                    p.font.size = Pt(28)
                 break
 
 
 def generate_presentation() -> None:
     """Generate the workshop presentation from template."""
     print(f"Loading template: {TEMPLATE_PATH}")
-
-    # Copy template to output
     shutil.copy(TEMPLATE_PATH, OUTPUT_PATH)
-
-    # Open the copy
     prs = Presentation(OUTPUT_PATH)
 
     print(f"Template has {len(prs.slides)} existing slides")
-
-    # Clear all slides except the first walk-in slide
     clear_slides(prs, keep_first_n=1)
-    print(f"Cleared slides, keeping first 1. Now have {len(prs.slides)} slides")
 
-    # Workshop slides content
-    slides_content = [
+    # SLIDES - Keep each slide to MAX 5-6 bullet points
+    slides = [
         {
             "layout": "title",
             "title": "Build an AI-Powered Image Analyzer",
@@ -185,114 +132,97 @@ def generate_presentation() -> None:
 
 Beta Microsoft Learn Student Ambassador
 
-Pursuing Masters of Software Engineering Systems
-at Northeastern University
+Masters in Software Engineering Systems
+Northeastern University
 
-Passionate about:
-- Python
-- Artificial Intelligence
-- Microsoft Azure
-
-linkedin.com/in/jainal-gosaliya
-github.com/jainal09""",
+Passionate about Python, AI & Azure!""",
         },
         {
             "layout": "content_alt",
             "title": "Agenda",
-            "content": """What We'll Cover Today:
-
-- Introduction to Azure AI Vision
-- Key Features & Capabilities
+            "content": """Today's Plan:
+- What is Azure AI Vision?
+- Key Features
 - Real-World Use Cases
-- Live Demo: Build an Image Analyzer
-- Resources & Next Steps
-- Q&A
-
-By the end, you'll be able to:
-- Set up Azure AI Vision resource from scratch
-- Build a working image analyzer application
-- Extract text, detect objects, and generate captions from images""",
+- Live Demo
+- Q&A""",
         },
         {
             "layout": "content",
             "title": "What is Azure AI Vision?",
-            "content": """Cloud-based AI service that analyzes images and extracts valuable information
+            "content": """Cloud-based AI for image analysis
 
-Part of Microsoft Foundry Tools (Azure AI Services)
+Part of Microsoft Azure AI Services
 
-Key Capabilities:
-- Read and extract text from images (OCR)
-- Detect and identify objects in photos
-- Generate human-like image descriptions
-- Analyze image content and metadata
-
-Pricing:
-- Free tier: 20 calls/min, 5,000 calls/month
-- Perfect for learning and prototyping!
-
-learn.microsoft.com/azure/ai-services/computer-vision/""",
+Capabilities:
+- Extract text from images (OCR)
+- Detect objects in photos
+- Generate image descriptions
+- Analyze image content""",
         },
         {
             "layout": "content_alt",
+            "title": "Pricing",
+            "content": """Free Tier Available!
+
+- 20 API calls per minute
+- 5,000 calls per month
+- No credit card required
+
+Perfect for learning & prototyping""",
+        },
+        {
+            "layout": "content",
             "title": "Key Features",
             "content": """OCR (Read):
 - Extract printed & handwritten text
-- Scan receipts, documents, signs
 
 Image Captions:
-- Generate natural language descriptions
 - "A dog playing in the park"
 
 Object Detection:
 - Identify objects with bounding boxes
-- Find all cars in a parking lot
 
 Smart Tags:
-- Label images with keywords
-- ["outdoor", "nature", "sunny"]
+- Auto-label images with keywords""",
+        },
+        {
+            "layout": "content_alt",
+            "title": "Use Cases: Accessibility",
+            "content": """Helping visually impaired users:
 
-Dense Captions:
-- Multiple captions for different image regions""",
+- Screen readers describing images
+- Auto-generate alt-text for websites
+- Make content accessible to everyone""",
         },
         {
             "layout": "content",
-            "title": "Real-World Use Cases",
-            "content": """Accessibility:
-- Screen readers for visually impaired users
-- Auto-generate alt-text for websites
-
-Retail & E-commerce:
+            "title": "Use Cases: Business",
+            "content": """Retail & E-commerce:
 - Product image tagging
-- Visual search ("find similar items")
+- Visual search
 
 Document Processing:
 - Digitize paper documents
-- Extract data from forms and receipts
-
-Security:
-- Object detection in security feeds
-- License plate recognition
-
-Social Media:
-- Content moderation
-- Auto-tagging photos""",
+- Extract data from receipts""",
         },
         {
-            "layout": "content_alt2",
+            "layout": "content_alt",
             "title": "What We'll Build",
-            "content": """A Streamlit web app that:
+            "content": """A Streamlit web app:
 
-- Accepts image upload or URL
-- Sends image to Azure AI Vision API
-- Displays AI-powered results
+1. Upload image or paste URL
+2. Send to Azure AI Vision API
+3. Display results:
+   - Caption
+   - Objects detected
+   - Extracted text (OCR)""",
+        },
+        {
+            "layout": "content",
+            "title": "Tech Stack",
+            "content": """Simple & Powerful:
 
-Features we'll implement:
-- Generated caption describing the image
-- Detected objects with bounding boxes
-- Extracted text (OCR)
-- Smart tags and keywords
-
-Tech Stack:
 - Python 3.10+
 - Streamlit (Web UI)
 - Azure AI Vision REST API
@@ -305,26 +235,40 @@ Tech Stack:
         },
         {
             "layout": "content",
-            "title": "Resources & Next Steps",
-            "content": """Official Documentation:
+            "title": "Resources",
+            "content": """Documentation:
 - learn.microsoft.com/azure/ai-services/computer-vision/
 
 Microsoft Learn Path:
-- learn.microsoft.com/training/paths/create-computer-vision-solutions-azure-ai/
-
-Certifications:
-- AI-102: Azure AI Engineer Associate
-- AI-900: Azure AI Fundamentals
+- Azure AI Vision learning path
 
 Code from Today:
-- github.com/jainal09/azure-ai-vision-workshop
+- github.com/jainal09/azure-ai-vision-workshop""",
+        },
+        {
+            "layout": "content_alt",
+            "title": "Certifications",
+            "content": """Continue your journey:
 
-Connect with Me:
-- linkedin.com/in/jainal-gosaliya""",
+- AI-900: Azure AI Fundamentals
+- AI-102: Azure AI Engineer Associate
+
+Free learning resources on Microsoft Learn!""",
         },
         {
             "layout": "section",
             "title": "Q&A",
+        },
+        {
+            "layout": "content",
+            "title": "Connect With Me",
+            "content": """Jainal Gosaliya
+
+LinkedIn:
+- linkedin.com/in/jainal-gosaliya
+
+GitHub:
+- github.com/jainal09""",
         },
         {
             "layout": "closing",
@@ -332,14 +276,12 @@ Connect with Me:
         },
     ]
 
-    # Add slides
-    for i, slide_data in enumerate(slides_content):
-        print(f"Adding slide {i + 2}: {slide_data.get('title', 'Untitled')} ({slide_data['layout']})")
+    for i, slide_data in enumerate(slides):
+        print(f"Adding slide {i + 2}: {slide_data.get('title', 'Untitled')}")
         add_slide(prs, slide_data)
 
-    # Save
     prs.save(OUTPUT_PATH)
-    print(f"\nPresentation saved to: {OUTPUT_PATH}")
+    print(f"\nSaved: {OUTPUT_PATH}")
     print(f"Total slides: {len(prs.slides)}")
 
 
