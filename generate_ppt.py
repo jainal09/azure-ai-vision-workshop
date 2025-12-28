@@ -22,13 +22,29 @@ OUTPUT_PATH = "/Users/jainal09/msa-q4-25/Azure_AI_Vision_Workshop.pptx"
 WORKSHOP_CONTENT = {
     "title": "Build an AI-Powered Image Analyzer",
     "subtitle": "Azure AI Vision Workshop",
-    "presenter": "[Your Name]",  # Update this!
-    "date": "[Event Date]",  # Update this!
+    "presenter": "Jainal Gosaliya",
+    "date": "",  # Update this!
     "slides": [
         {
             "layout": "title",  # Will use Walkin 4 (index 3)
             "title": "Build an AI-Powered Image Analyzer",
-            "subtitle": "Azure AI Vision Workshop | Microsoft Student Ambassadors",
+            "subtitle": "Azure AI Vision Workshop",
+        },
+        {
+            "layout": "content",
+            "title": "About Me",
+            "content": """Jainal Gosaliya
+
+Beta Microsoft Learn Student Ambassador
+
+Pursuing Masters of Software Engineering Systems
+at Northeastern University
+
+Loves Python, AI, and Azure!
+
+Connect with me:
+linkedin.com/in/jainal-gosaliya
+github.com/jainal09""",
         },
         {
             "layout": "content",  # Title & Non-bulleted text (index 6)
@@ -146,9 +162,10 @@ Certifications
 - AI-900: Azure AI Fundamentals
 
 Code from Today
-github.com/[your-repo]
+github.com/jainal09/azure-ai-vision-workshop
 
-Questions? Let's connect!""",
+Questions? Let's connect!
+linkedin.com/in/jainal-gosaliya""",
         },
         {
             "layout": "section",  # Section Title (index 21)
