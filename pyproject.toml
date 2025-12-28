@@ -1,0 +1,26 @@
+[project]
+name = "azure-vision-workshop"
+version = "1.0.0"
+description = "Azure AI Vision Workshop Demo - Microsoft Student Ambassadors"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [
+    { name = "Microsoft Student Ambassador" }
+]
+keywords = ["azure", "ai", "vision", "computer-vision", "streamlit", "workshop"]
+
+dependencies = [
+    "streamlit>=1.28.0",
+    "requests>=2.31.0",
+    "Pillow>=10.0.0",
+    "python-dotenv>=1.0.0",
+    "python-pptx>=0.6.23",
+]
+
+[dependency-groups]
+dev = [
+    "ty>=0.0.1",
+]
+
+[tool.ty.environment]
+python-version = "3.10"
