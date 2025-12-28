@@ -23,6 +23,7 @@ uv.lock
 # OS
 .DS_Store
 Thumbs.db
+~$*
 
 # Streamlit
 .streamlit/secrets.toml
