@@ -36,34 +36,42 @@ API_VERSION = "2024-02-01"
 ANALYZE_URL = f"{ENDPOINT}/computervision/imageanalysis:analyze"
 
 
-def analyze_image(image_data: bytes, features: list[str]) -> dict[str, Any]:
+def analyze_image(
+    features: list[str], image_data: bytes | None = None, image_url: str | None = None
+) -> dict[str, Any]:
     """
-    Send image to Azure AI Vision API for analysis.
+    Analyze image using Azure AI Vision API.
 
     Args:
-        image_data: Image bytes
         features: List of features to analyze (caption, tags, objects, read, denseCaptions)
+        image_data: Image bytes (optional)
+        image_url: URL of the image (optional)
 
     Returns:
         API response as dictionary
     """
-    headers = {
-        "Ocp-Apim-Subscription-Key": API_KEY,
-        "Content-Type": "application/octet-stream"
-    }
+    if not image_data and not image_url:
+        st.error("Either image_data or image_url must be provided")
+        return {}
 
-    params = {
-        "api-version": API_VERSION,
-        "features": ",".join(features)
-    }
+    params = {"api-version": API_VERSION, "features": ",".join(features)}
 
-    response = requests.post(
-        ANALYZE_URL,
-        headers=headers,
-        params=params,
-        data=image_data,
-        timeout=30
-    )
+    headers = {"Ocp-Apim-Subscription-Key": API_KEY}
+
+    if image_data:
+        headers["Content-Type"] = "application/octet-stream"
+        response = requests.post(
+            ANALYZE_URL, headers=headers, params=params, data=image_data, timeout=30
+        )
+    else:
+        headers["Content-Type"] = "application/json"
+        response = requests.post(
+            ANALYZE_URL,
+            headers=headers,
+            params=params,
+            json={"url": image_url},
+            timeout=30,
+        )
 
     if response.status_code != 200:
         st.error(f"API Error: {response.status_code} - {response.text}")
@@ -72,45 +80,9 @@ def analyze_image(image_data: bytes, features: list[str]) -> dict[str, Any]:
     return response.json()
 
 
-def analyze_image_url(image_url: str, features: list[str]) -> dict[str, Any]:
-    """
-    Analyze image from URL using Azure AI Vision API.
-
-    Args:
-        image_url: URL of the image
-        features: List of features to analyze
-
-    Returns:
-        API response as dictionary
-    """
-    headers = {
-        "Ocp-Apim-Subscription-Key": API_KEY,
-        "Content-Type": "application/json"
-    }
-
-    params = {
-        "api-version": API_VERSION,
-        "features": ",".join(features)
-    }
-
-    body = {"url": image_url}
-
-    response = requests.post(
-        ANALYZE_URL,
-        headers=headers,
-        params=params,
-        json=body,
-        timeout=30
-    )
-
-    if response.status_code != 200:
-        st.error(f"API Error: {response.status_code} - {response.text}")
-        return {}
-
-    return response.json()
-
-
-def draw_bounding_boxes(image: Image.Image, objects: list[dict[str, Any]]) -> Image.Image:
+def draw_bounding_boxes(
+    image: Image.Image, objects: list[dict[str, Any]]
+) -> Image.Image:
     """
     Draw bounding boxes around detected objects.
 
@@ -124,12 +96,26 @@ def draw_bounding_boxes(image: Image.Image, objects: list[dict[str, Any]]) -> Im
     draw = ImageDraw.Draw(image)
 
     # Colors for different objects
-    colors = ["#FF6B6B", "#4ECDC4", "#45B7D1", "#96CEB4", "#FFEAA7", "#DDA0DD", "#98D8C8"]
+    colors = [
+        "#FF6B6B",
+        "#4ECDC4",
+        "#45B7D1",
+        "#96CEB4",
+        "#FFEAA7",
+        "#DDA0DD",
+        "#98D8C8",
+    ]
 
     for i, obj in enumerate(objects):
         bbox = obj.get("boundingBox", {})
-        label = obj.get("tags", [{}])[0].get("name", "object") if obj.get("tags") else "object"
-        confidence = obj.get("tags", [{}])[0].get("confidence", 0) if obj.get("tags") else 0
+        label = (
+            obj.get("tags", [{}])[0].get("name", "object")
+            if obj.get("tags")
+            else "object"
+        )
+        confidence = (
+            obj.get("tags", [{}])[0].get("confidence", 0) if obj.get("tags") else 0
+        )
 
         x = bbox.get("x", 0)
         y = bbox.get("y", 0)
@@ -139,11 +125,7 @@ def draw_bounding_boxes(image: Image.Image, objects: list[dict[str, Any]]) -> Im
         color = colors[i % len(colors)]
 
         # Draw rectangle
-        draw.rectangle(
-            [(x, y), (x + w, y + h)],
-            outline=color,
-            width=3
-        )
+        draw.rectangle([(x, y), (x + w, y + h)], outline=color, width=3)
 
         # Draw label background
         label_text = f"{label} ({confidence:.0%})"
@@ -179,15 +161,44 @@ def draw_ocr_boxes(image: Image.Image, read_result: dict[str, Any]) -> Image.Ima
     return image
 
 
+def draw_people_boxes(image: Image.Image, people: list[dict[str, Any]]) -> Image.Image:
+    """
+    Draw bounding boxes around detected people.
+
+    Args:
+        image: PIL Image object
+        people: List of detected people with bounding box coordinates
+
+    Returns:
+        Image with people bounding boxes drawn
+    """
+    draw = ImageDraw.Draw(image)
+
+    for i, person in enumerate(people):
+        bbox = person.get("boundingBox", {})
+        x = bbox.get("x", 0)
+        y = bbox.get("y", 0)
+        w = bbox.get("w", 0)
+        h = bbox.get("h", 0)
+        conf = person.get("confidence", 0)
+
+        # Draw rectangle
+        draw.rectangle([(x, y), (x + w, y + h)], outline="#FF00FF", width=3)
+
+        # Draw label
+        label = f"Person {i + 1} ({conf:.0%})"
+        text_bbox = draw.textbbox((x, y - 20), label)
+        draw.rectangle(text_bbox, fill="#FF00FF")
+        draw.text((x, y - 20), label, fill="white")
+
+    return image
+
+
 def main() -> None:
     """Main Streamlit application."""
 
     # Page configuration
-    st.set_page_config(
-        page_title="Azure AI Vision Demo",
-        page_icon="👁️",
-        layout="wide"
-    )
+    st.set_page_config(page_title="Azure AI Vision Demo", page_icon="👁️", layout="wide")
 
     # Header
     st.title("👁️ Azure AI Vision Demo")
@@ -214,22 +225,34 @@ def main() -> None:
 
     features_to_analyze = []
 
-    if st.sidebar.checkbox("📝 Caption", value=True, help="Generate a description of the image"):
+    if st.sidebar.checkbox(
+        "📝 Caption", value=True, help="Generate a description of the image"
+    ):
         features_to_analyze.append("caption")
 
-    if st.sidebar.checkbox("🏷️ Tags", value=True, help="Identify tags/keywords in the image"):
+    if st.sidebar.checkbox(
+        "🏷️ Tags", value=True, help="Identify tags/keywords in the image"
+    ):
         features_to_analyze.append("tags")
 
-    if st.sidebar.checkbox("📦 Object Detection", value=True, help="Detect objects with bounding boxes"):
+    if st.sidebar.checkbox(
+        "📦 Object Detection", value=True, help="Detect objects with bounding boxes"
+    ):
         features_to_analyze.append("objects")
 
-    if st.sidebar.checkbox("📄 OCR (Read Text)", value=True, help="Extract text from the image"):
+    if st.sidebar.checkbox(
+        "📄 OCR (Read Text)", value=True, help="Extract text from the image"
+    ):
         features_to_analyze.append("read")
 
-    if st.sidebar.checkbox("🔍 Dense Captions", value=False, help="Generate captions for multiple regions"):
+    if st.sidebar.checkbox(
+        "🔍 Dense Captions", value=False, help="Generate captions for multiple regions"
+    ):
         features_to_analyze.append("denseCaptions")
 
-    if st.sidebar.checkbox("👥 People Detection", value=False, help="Detect people in the image"):
+    if st.sidebar.checkbox(
+        "👥 People Detection", value=False, help="Detect people in the image"
+    ):
         features_to_analyze.append("people")
 
     if st.sidebar.checkbox("✂️ Smart Crops", value=False, help="Suggest crop regions"):
@@ -237,8 +260,12 @@ def main() -> None:
 
     st.sidebar.markdown("---")
     st.sidebar.markdown("### 📚 Resources")
-    st.sidebar.markdown("[Azure AI Vision Docs](https://learn.microsoft.com/en-us/azure/ai-services/computer-vision/)")
-    st.sidebar.markdown("[Microsoft Learn Path](https://learn.microsoft.com/en-us/training/paths/create-computer-vision-solutions-azure-ai/)")
+    st.sidebar.markdown(
+        "[Azure AI Vision Docs](https://learn.microsoft.com/en-us/azure/ai-services/computer-vision/)"
+    )
+    st.sidebar.markdown(
+        "[Microsoft Learn Path](https://learn.microsoft.com/en-us/training/paths/create-computer-vision-solutions-azure-ai/)"
+    )
 
     # Main content - Image input
     st.header("📸 Upload or Enter Image")
@@ -262,7 +289,7 @@ def main() -> None:
         uploaded_file = st.file_uploader(
             "Choose an image file",
             type=["jpg", "jpeg", "png", "gif", "bmp", "webp"],
-            help="Upload an image to analyze"
+            help="Upload an image to analyze",
         )
 
         # Only set input_source to upload if this is a NEW file
@@ -277,7 +304,7 @@ def main() -> None:
         url_input = st.text_input(
             "Enter image URL",
             placeholder="https://example.com/image.jpg",
-            help="Enter a publicly accessible image URL"
+            help="Enter a publicly accessible image URL",
         )
 
         if url_input:
@@ -341,17 +368,15 @@ def main() -> None:
         # Analyze button
         if st.button("🔍 Analyze Image", type="primary", width="stretch"):
             if not features_to_analyze:
-                st.warning("Please select at least one analysis feature from the sidebar.")
+                st.warning(
+                    "Please select at least one analysis feature from the sidebar."
+                )
             else:
                 with st.spinner("🔄 Analyzing image with Azure AI Vision..."):
                     # Call API
-                    if image_data:
-                        result = analyze_image(image_data, features_to_analyze)
-                    elif image_url:
-                        result = analyze_image_url(image_url, features_to_analyze)
-                    else:
-                        st.error("No image to analyze")
-                        result = {}
+                    result = analyze_image(
+                        features_to_analyze, image_data=image_data, image_url=image_url
+                    )
 
                 if result:
                     st.header("📊 Analysis Results")
@@ -365,17 +390,21 @@ def main() -> None:
                             st.subheader("📝 Caption")
                             caption = result["captionResult"]
                             st.info(f"**{caption.get('text', 'N/A')}**")
-                            st.caption(f"Confidence: {caption.get('confidence', 0):.1%}")
+                            st.caption(
+                                f"Confidence: {caption.get('confidence', 0):.1%}"
+                            )
 
                         # Tags
                         if "tagsResult" in result:
                             st.subheader("🏷️ Tags")
                             tags = result["tagsResult"].get("values", [])
                             if tags:
-                                tag_html = " ".join([
-                                    f'<span style="background-color: #4ECDC4; color: white; padding: 4px 8px; border-radius: 4px; margin: 2px; display: inline-block;">{tag["name"]} ({tag["confidence"]:.0%})</span>'
-                                    for tag in tags[:15]
-                                ])
+                                tag_html = " ".join(
+                                    [
+                                        f'<span style="background-color: #4ECDC4; color: white; padding: 4px 8px; border-radius: 4px; margin: 2px; display: inline-block;">{tag["name"]} ({tag["confidence"]:.0%})</span>'
+                                        for tag in tags[:15]
+                                    ]
+                                )
                                 st.markdown(tag_html, unsafe_allow_html=True)
                             else:
                                 st.write("No tags detected")
@@ -383,9 +412,13 @@ def main() -> None:
                         # Dense Captions
                         if "denseCaptionsResult" in result:
                             st.subheader("🔍 Dense Captions")
-                            dense_captions = result["denseCaptionsResult"].get("values", [])
+                            dense_captions = result["denseCaptionsResult"].get(
+                                "values", []
+                            )
                             for dc in dense_captions[:5]:
-                                st.write(f"• {dc.get('text', 'N/A')} ({dc.get('confidence', 0):.0%})")
+                                st.write(
+                                    f"• {dc.get('text', 'N/A')} ({dc.get('confidence', 0):.0%})"
+                                )
 
                     with result_col2:
                         # OCR Results
@@ -401,9 +434,7 @@ def main() -> None:
 
                             if all_text:
                                 st.text_area(
-                                    "Detected Text:",
-                                    "\n".join(all_text),
-                                    height=200
+                                    "Detected Text:", "\n".join(all_text), height=200
                                 )
                             else:
                                 st.write("No text detected in image")
@@ -416,14 +447,22 @@ def main() -> None:
                             if objects:
                                 # Draw bounding boxes on image
                                 img_with_boxes = display_image.copy()
-                                img_with_boxes = draw_bounding_boxes(img_with_boxes, objects)
-                                st.image(img_with_boxes, caption="Objects with bounding boxes", width="stretch")
+                                img_with_boxes = draw_bounding_boxes(
+                                    img_with_boxes, objects
+                                )
+                                st.image(
+                                    img_with_boxes,
+                                    caption="Objects with bounding boxes",
+                                    width="stretch",
+                                )
 
                                 # List objects
                                 for obj in objects:
                                     tags = obj.get("tags", [])
                                     if tags:
-                                        st.write(f"• {tags[0]['name']} ({tags[0]['confidence']:.0%})")
+                                        st.write(
+                                            f"• {tags[0]['name']} ({tags[0]['confidence']:.0%})"
+                                        )
                             else:
                                 st.write("No objects detected")
 
@@ -432,29 +471,23 @@ def main() -> None:
                             st.subheader("👥 People Detected")
                             people = result["peopleResult"].get("values", [])
                             # Filter by confidence (>50%)
-                            confident_people = [p for p in people if p.get("confidence", 0) > 0.5]
-                            st.write(f"Found {len(confident_people)} person(s) in the image")
+                            confident_people = [
+                                p for p in people if p.get("confidence", 0) > 0.5
+                            ]
+                            st.write(
+                                f"Found {len(confident_people)} person(s) in the image"
+                            )
                             if confident_people:
                                 # Draw bounding boxes on people
                                 img_with_people = display_image.copy()
-                                draw = ImageDraw.Draw(img_with_people)
-                                for i, person in enumerate(confident_people):
-                                    bbox = person.get("boundingBox", {})
-                                    x = bbox.get("x", 0)
-                                    y = bbox.get("y", 0)
-                                    w = bbox.get("w", 0)
-                                    h = bbox.get("h", 0)
-                                    conf = person.get("confidence", 0)
-
-                                    # Draw rectangle
-                                    draw.rectangle([(x, y), (x + w, y + h)], outline="#FF00FF", width=3)
-                                    # Draw label
-                                    label = f"Person {i + 1} ({conf:.0%})"
-                                    text_bbox = draw.textbbox((x, y - 20), label)
-                                    draw.rectangle(text_bbox, fill="#FF00FF")
-                                    draw.text((x, y - 20), label, fill="white")
-
-                                st.image(img_with_people, caption="People with bounding boxes", width="stretch")
+                                img_with_people = draw_people_boxes(
+                                    img_with_people, confident_people
+                                )
+                                st.image(
+                                    img_with_people,
+                                    caption="People with bounding boxes",
+                                    width="stretch",
+                                )
 
                                 for i, person in enumerate(confident_people):
                                     conf = person.get("confidence", 0)
@@ -473,8 +506,14 @@ def main() -> None:
                                     h = bbox.get("h", 0)
 
                                     # Crop the image
-                                    cropped = display_image.copy().crop((x, y, x + w, y + h))
-                                    st.image(cropped, caption=f"Smart Crop {i + 1}", width="stretch")
+                                    cropped = display_image.copy().crop(
+                                        (x, y, x + w, y + h)
+                                    )
+                                    st.image(
+                                        cropped,
+                                        caption=f"Smart Crop {i + 1}",
+                                        width="stretch",
+                                    )
                             else:
                                 st.write("No smart crops suggested")
 
@@ -483,7 +522,9 @@ def main() -> None:
                         st.json(result)
 
     else:
-        st.info("👆 Upload an image, enter a URL, or select a sample image to get started!")
+        st.info(
+            "👆 Upload an image, enter a URL, or select a sample image to get started!"
+        )
 
     # Footer
     st.markdown("---")
@@ -494,7 +535,7 @@ def main() -> None:
         <a href='https://learn.microsoft.com/en-us/azure/ai-services/computer-vision/'>Documentation</a>
         </div>
         """,
-        unsafe_allow_html=True
+        unsafe_allow_html=True,
     )
 
 
