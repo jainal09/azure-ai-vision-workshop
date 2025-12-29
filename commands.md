@@ -217,15 +217,51 @@ AZURE_VISION_KEY=your-32-character-key-here
 
 ## Troubleshooting
 
-### "F0 SKU is not available"
+### "F0 SKU is not available" or "CanNotCreateMultipleFreeAccounts"
 
-You already have a free tier resource. Options:
-1. Use `--sku S1` instead (paid, ~$1/1000 calls)
-2. Delete the existing F0 resource:
-   ```bash
-   az cognitiveservices account list --output table
-   # Find the existing F0 resource and delete it
-   ```
+You already have a free tier resource (or a soft-deleted one blocking it). Options:
+
+**Option A: Use paid tier instead**
+```bash
+az cognitiveservices account create \
+  --name vision-workshop-resource \
+  --resource-group rg-vision-workshop \
+  --kind ComputerVision \
+  --sku S1 \
+  --location eastus \
+  --yes
+```
+Cost: ~$1 per 1,000 API calls
+
+**Option B: Find and delete the existing F0 resource**
+```bash
+# List active ComputerVision resources
+az cognitiveservices account list --query "[?kind=='ComputerVision']" --output table
+
+# If found, delete it
+az cognitiveservices account delete --name <resource-name> --resource-group <resource-group>
+```
+
+**Option C: Purge soft-deleted resources (most common issue!)**
+```bash
+# List soft-deleted resources
+az cognitiveservices account list-deleted --output table
+
+# Purge the soft-deleted resource
+az cognitiveservices account purge \
+  --name vision-workshop-resource \
+  --location eastus \
+  --resource-group rg-vision-workshop
+
+# Then retry creating the F0 resource
+az cognitiveservices account create \
+  --name vision-workshop-resource \
+  --resource-group rg-vision-workshop \
+  --kind ComputerVision \
+  --sku F0 \
+  --location eastus \
+  --yes
+```
 
 ### "Resource provider not registered"
 

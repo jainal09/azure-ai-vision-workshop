@@ -22,7 +22,7 @@ from typing import Any
 import requests
 import streamlit as st
 from dotenv import load_dotenv
-from PIL import Image, ImageDraw
+from PIL import Image, ImageDraw, ImageOps
 
 # Load environment variables
 load_dotenv()
@@ -245,9 +245,18 @@ def main() -> None:
 
     tab1, tab2, tab3 = st.tabs(["📁 Upload Image", "🔗 Image URL", "🖼️ Sample Images"])
 
+    # Track which input source is active
+    if "input_source" not in st.session_state:
+        st.session_state.input_source = None
+    if "sample_url" not in st.session_state:
+        st.session_state.sample_url = None
+    if "last_uploaded_file" not in st.session_state:
+        st.session_state.last_uploaded_file = None
+
     image_data = None
     image_url = None
     display_image = None
+    uploaded_file = None
 
     with tab1:
         uploaded_file = st.file_uploader(
@@ -256,26 +265,24 @@ def main() -> None:
             help="Upload an image to analyze"
         )
 
+        # Only set input_source to upload if this is a NEW file
         if uploaded_file:
-            image_data = uploaded_file.getvalue()
-            display_image = Image.open(io.BytesIO(image_data))
+            file_id = f"{uploaded_file.name}_{uploaded_file.size}"
+            if file_id != st.session_state.last_uploaded_file:
+                st.session_state.input_source = "upload"
+                st.session_state.sample_url = None
+                st.session_state.last_uploaded_file = file_id
 
     with tab2:
-        image_url = st.text_input(
+        url_input = st.text_input(
             "Enter image URL",
             placeholder="https://example.com/image.jpg",
             help="Enter a publicly accessible image URL"
         )
 
-        if image_url:
-            try:
-                response = requests.get(image_url, timeout=10)
-                if response.status_code == 200:
-                    display_image = Image.open(io.BytesIO(response.content))
-                else:
-                    st.error("Failed to load image from URL")
-            except Exception as e:
-                st.error(f"Error loading image: {e}")
+        if url_input:
+            st.session_state.input_source = "url"
+            st.session_state.sample_url = None
 
     with tab3:
         st.markdown("**Try these sample images:**")
@@ -292,13 +299,36 @@ def main() -> None:
         for i, (name, url) in enumerate(sample_images.items()):
             with cols[i]:
                 if st.button(f"📷 {name}", key=f"sample_{i}"):
-                    image_url = url
-                    try:
-                        response = requests.get(url, timeout=10)
-                        if response.status_code == 200:
-                            display_image = Image.open(io.BytesIO(response.content))
-                    except Exception as e:
-                        st.error(f"Error loading sample: {e}")
+                    st.session_state.input_source = "sample"
+                    st.session_state.sample_url = url
+
+    # Load image based on input source
+    if st.session_state.input_source == "upload" and uploaded_file:
+        display_image = Image.open(io.BytesIO(uploaded_file.getvalue()))
+        # Fix EXIF orientation (phone photos often appear rotated without this)
+        display_image = ImageOps.exif_transpose(display_image)
+        # Convert back to bytes for API call
+        img_buffer = io.BytesIO()
+        display_image.save(img_buffer, format=display_image.format or "PNG")
+        image_data = img_buffer.getvalue()
+    elif st.session_state.input_source == "url" and url_input:
+        image_url = url_input
+        try:
+            response = requests.get(image_url, timeout=10)
+            if response.status_code == 200:
+                display_image = Image.open(io.BytesIO(response.content))
+            else:
+                st.error("Failed to load image from URL")
+        except Exception as e:
+            st.error(f"Error loading image: {e}")
+    elif st.session_state.input_source == "sample" and st.session_state.sample_url:
+        image_url = st.session_state.sample_url
+        try:
+            response = requests.get(image_url, timeout=10)
+            if response.status_code == 200:
+                display_image = Image.open(io.BytesIO(response.content))
+        except Exception as e:
+            st.error(f"Error loading sample: {e}")
 
     # Display image and analyze button
     if display_image:
@@ -306,10 +336,10 @@ def main() -> None:
 
         with col1:
             st.subheader("🖼️ Original Image")
-            st.image(display_image, use_container_width=True)
+            st.image(display_image, width="stretch")
 
         # Analyze button
-        if st.button("🔍 Analyze Image", type="primary", use_container_width=True):
+        if st.button("🔍 Analyze Image", type="primary", width="stretch"):
             if not features_to_analyze:
                 st.warning("Please select at least one analysis feature from the sidebar.")
             else:
@@ -387,7 +417,7 @@ def main() -> None:
                                 # Draw bounding boxes on image
                                 img_with_boxes = display_image.copy()
                                 img_with_boxes = draw_bounding_boxes(img_with_boxes, objects)
-                                st.image(img_with_boxes, caption="Objects with bounding boxes", use_container_width=True)
+                                st.image(img_with_boxes, caption="Objects with bounding boxes", width="stretch")
 
                                 # List objects
                                 for obj in objects:
@@ -401,7 +431,52 @@ def main() -> None:
                         if "peopleResult" in result:
                             st.subheader("👥 People Detected")
                             people = result["peopleResult"].get("values", [])
-                            st.write(f"Found {len(people)} person(s) in the image")
+                            # Filter by confidence (>50%)
+                            confident_people = [p for p in people if p.get("confidence", 0) > 0.5]
+                            st.write(f"Found {len(confident_people)} person(s) in the image")
+                            if confident_people:
+                                # Draw bounding boxes on people
+                                img_with_people = display_image.copy()
+                                draw = ImageDraw.Draw(img_with_people)
+                                for i, person in enumerate(confident_people):
+                                    bbox = person.get("boundingBox", {})
+                                    x = bbox.get("x", 0)
+                                    y = bbox.get("y", 0)
+                                    w = bbox.get("w", 0)
+                                    h = bbox.get("h", 0)
+                                    conf = person.get("confidence", 0)
+
+                                    # Draw rectangle
+                                    draw.rectangle([(x, y), (x + w, y + h)], outline="#FF00FF", width=3)
+                                    # Draw label
+                                    label = f"Person {i + 1} ({conf:.0%})"
+                                    text_bbox = draw.textbbox((x, y - 20), label)
+                                    draw.rectangle(text_bbox, fill="#FF00FF")
+                                    draw.text((x, y - 20), label, fill="white")
+
+                                st.image(img_with_people, caption="People with bounding boxes", width="stretch")
+
+                                for i, person in enumerate(confident_people):
+                                    conf = person.get("confidence", 0)
+                                    st.write(f"• Person {i + 1}: {conf:.0%} confidence")
+
+                        # Smart Crops
+                        if "smartCropsResult" in result:
+                            st.subheader("✂️ Smart Crops")
+                            crops = result["smartCropsResult"].get("values", [])
+                            if crops:
+                                for i, crop in enumerate(crops):
+                                    bbox = crop.get("boundingBox", {})
+                                    x = bbox.get("x", 0)
+                                    y = bbox.get("y", 0)
+                                    w = bbox.get("w", 0)
+                                    h = bbox.get("h", 0)
+
+                                    # Crop the image
+                                    cropped = display_image.copy().crop((x, y, x + w, y + h))
+                                    st.image(cropped, caption=f"Smart Crop {i + 1}", width="stretch")
+                            else:
+                                st.write("No smart crops suggested")
 
                     # Raw JSON (expandable)
                     with st.expander("📋 View Raw JSON Response"):
